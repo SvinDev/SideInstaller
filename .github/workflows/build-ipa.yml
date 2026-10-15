@@ -1,0 +1,128 @@
+name: build-ipa
+
+# Builds an unsigned SideInstaller IPA from source on a macOS runner, for
+# testing a branch without a Mac. It does what scripts/export-ipa.sh does
+# locally: the Rust core for the device, the Xcode project from project.yml,
+# and a Release build with the bundle id the public IPA uses, so it installs
+# over the app already on the iPhone and keeps its data.
+#
+# The IPA is uploaded as a run artifact and attached to a prerelease named
+# after the branch (replaced on every run), which is easier to download on an
+# iPhone. Install it with SideStore or any signer that takes an IPA.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # the branch's prerelease
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      BUNDLE_ID: com.frizzlem.sideinstaller
+      IPHONEOS_DEPLOYMENT_TARGET: "17.4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          best="" best_version=""
+          for x in /Applications/Xcode*.app; do
+            v=$(defaults read "$x/Contents/Info" CFBundleShortVersionString 2>/dev/null) || continue
+            if [ -z "$best" ] || [ "$(printf '%s\n%s\n' "$best_version" "$v" |
+                sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$v" ]; then
+              best="$x" best_version="$v"
+            fi
+          done
+          [ -n "$best" ] || { echo "::error::no Xcode found"; exit 1; }
+          echo "Using $best ($best_version)"
+          echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios
+          rustc --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-core/target
+          key: rust-ios-${{ hashFiles('rust-core/Cargo.lock') }}-${{ hashFiles('rust-core/vendor/**/Cargo.toml') }}
+          restore-keys: rust-ios-
+
+      - name: Build the Rust core
+        run: |
+          # As build-rust.sh: keep the runner's paths out of the binary.
+          export RUSTFLAGS="--remap-path-prefix=$HOME=/build"
+          export CFLAGS="-ffile-prefix-map=$HOME=/build"
+          (cd rust-core && cargo build --release --target aarch64-apple-ios)
+          xcodebuild -create-xcframework \
+            -library rust-core/target/aarch64-apple-ios/release/libsideinstaller_ffi.a \
+            -headers rust-core/include \
+            -output SideInstallerFFI.xcframework
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          # The public IPA's bundle id; the extension keeps its suffix.
+          sed -i '' "s/com\.frizzle\.sideinstaller/$BUNDLE_ID/g" project.yml
+          xcodegen generate
+
+      - name: Build SideInstaller (Release, unsigned)
+        run: |
+          version=$(tr -d '[:space:]' < latest_version.txt)
+          if ! xcodebuild build \
+              -project SideInstaller.xcodeproj -target SideInstaller \
+              -configuration Release -sdk iphoneos \
+              SYMROOT="$PWD/build" MARKETING_VERSION="$version" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              > xcodebuild.log 2>&1; then
+            grep -E "error:|\*\* BUILD FAILED" xcodebuild.log | head -60
+            tail -40 xcodebuild.log
+            exit 1
+          fi
+          grep -E "warning:.*\.swift" xcodebuild.log | sort -u | head -40 || true
+
+      - name: Package the IPA
+        run: |
+          app=build/Release-iphoneos/SideInstaller.app
+          id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Info.plist")
+          [ "$id" = "$BUNDLE_ID" ] || { echo "::error::bundle id is $id, not $BUNDLE_ID"; exit 1; }
+          mkdir -p stage/Payload
+          ditto "$app" stage/Payload/SideInstaller.app
+          (cd stage && zip -qryX ../SideInstaller.ipa Payload)
+          ls -lh SideInstaller.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SideInstaller-ipa
+          path: SideInstaller.ipa
+
+      - name: Attach to the branch's prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" SideInstaller.ipa --prerelease \
+            --target "$GITHUB_SHA" --title "Test build: $GITHUB_REF_NAME" \
+            --notes "Unsigned SideInstaller IPA built from $GITHUB_REF_NAME at ${GITHUB_SHA:0:7}. Install it with SideStore or another signer."
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
