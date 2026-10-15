@@ -285,6 +285,22 @@ pub unsafe extern "C" fn si_cert_revoke(
     certs::cert_revoke(session, serial_number, out_error)
 }
 
+/// Export this device's certificate and its private key as a PKCS#12 archive,
+/// as JSON in `*out_json`. Blocks.
+///
+/// # Safety
+/// See `certs::cert_export_p12`.
+#[no_mangle]
+pub unsafe extern "C" fn si_cert_export_p12(
+    session: *mut CertSession,
+    serial_number: *const c_char,
+    password: *const c_char,
+    out_json: *mut *mut c_char,
+    out_error: *mut *mut c_char,
+) -> i32 {
+    certs::cert_export_p12(session, serial_number, password, out_json, out_error)
+}
+
 /// Free a certificate session.
 ///
 /// # Safety

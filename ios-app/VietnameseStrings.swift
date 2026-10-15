@@ -265,6 +265,18 @@ let vietnameseStrings: [String: String] = [
     "Unnamed certificate": "Chứng chỉ không có tên",
     "This certificate has no serial number, so it can't be revoked.":
         "Chứng chỉ này không có số sê-ri nên không thể thu hồi.",
+    "Export .p12": "Xuất .p12",
+    "Exporting": "Đang xuất",
+    "Export as .p12": "Xuất dưới dạng .p12",
+    "Export": "Xuất",
+    "Choose a password for the file. You'll enter it again when you import the certificate into Nyxian or another signing app. Anyone with the file and its password can sign apps with your certificate.":
+        "Chọn mật khẩu cho tệp. Bạn sẽ nhập lại mật khẩu này khi nhập chứng chỉ vào Nyxian hoặc ứng dụng ký khác. Bất kỳ ai có tệp và mật khẩu của nó đều có thể ký ứng dụng bằng chứng chỉ của bạn.",
+    "Enter a password for the .p12 file.": "Hãy nhập mật khẩu cho tệp .p12.",
+    "There's no certificate to export on this iPhone. Only a certificate SideInstaller made on this iPhone can be exported, since Apple never has its private key. If it was revoked, install SideStore with SideInstaller again to make a new one.":
+        "Không có chứng chỉ nào để xuất trên iPhone này. Chỉ có thể xuất chứng chỉ mà SideInstaller đã tạo trên iPhone này, vì Apple không bao giờ giữ khóa riêng của nó. Nếu chứng chỉ đã bị thu hồi, hãy cài lại SideStore bằng SideInstaller để tạo chứng chỉ mới.",
+    "SideInstaller made this certificate on another device, so its private key isn't on this iPhone. Export it from that device.":
+        "SideInstaller đã tạo chứng chỉ này trên một thiết bị khác, nên khóa riêng của nó không có trên iPhone này. Hãy xuất nó từ thiết bị đó.",
+    "Couldn't save the .p12 file: %@": "Không thể lưu tệp .p12: %@",
 
     // MARK: - Location tab
 

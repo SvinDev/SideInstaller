@@ -260,6 +260,18 @@ let japaneseStrings: [String: String] = [
     "Unnamed certificate": "名前のない証明書",
     "This certificate has no serial number, so it can't be revoked.":
         "この証明書にはシリアル番号がないため、失効させることができません。",
+    "Export .p12": ".p12 を書き出す",
+    "Exporting": "書き出し中",
+    "Export as .p12": ".p12 として書き出す",
+    "Export": "書き出す",
+    "Choose a password for the file. You'll enter it again when you import the certificate into Nyxian or another signing app. Anyone with the file and its password can sign apps with your certificate.":
+        "ファイルのパスワードを決めてください。Nyxian などの署名アプリに証明書を読み込むときに、もう一度入力します。ファイルとそのパスワードがあれば、誰でもあなたの証明書でアプリに署名できます。",
+    "Enter a password for the .p12 file.": ".p12 ファイルのパスワードを入力してください。",
+    "There's no certificate to export on this iPhone. Only a certificate SideInstaller made on this iPhone can be exported, since Apple never has its private key. If it was revoked, install SideStore with SideInstaller again to make a new one.":
+        "この iPhone には書き出せる証明書がありません。書き出せるのは SideInstaller がこの iPhone で作成した証明書だけです。Apple はその秘密鍵を持っていないためです。失効している場合は、SideInstaller で SideStore をもう一度インストールして新しい証明書を作成してください。",
+    "SideInstaller made this certificate on another device, so its private key isn't on this iPhone. Export it from that device.":
+        "この証明書は SideInstaller が別のデバイスで作成したため、秘密鍵はこの iPhone にありません。そのデバイスから書き出してください。",
+    "Couldn't save the .p12 file: %@": ".p12 ファイルを保存できませんでした：%@",
 
     // MARK: - Location tab
 

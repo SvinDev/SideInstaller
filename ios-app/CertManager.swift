@@ -51,10 +51,20 @@ struct DevCert: Identifiable, Decodable, Equatable {
     }
 }
 
-/// Lists and revokes the Apple ID's development certificates, using the engine's
-/// credentials and 2FA prompt. Developer-portal only (no device); blocking FFI
-/// calls run on a background queue.
+/// The `.p12` `CertManager.exportP12` wrote, for the share sheet.
+struct ExportedP12: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// Lists, revokes and exports the Apple ID's development certificates, using
+/// the engine's credentials and 2FA prompt. Developer-portal only (no device);
+/// blocking FFI calls run on a background queue.
 final class CertManager: ObservableObject {
+
+    /// The machine name SideInstaller's certificates are made under (what the
+    /// install flow passes to `si_apple_signin`). Only those can be exported.
+    static let machineName = "SideInstaller"
 
     @Published private(set) var certs: [DevCert] = []
     @Published private(set) var isSignedIn = false
@@ -63,6 +73,10 @@ final class CertManager: ObservableObject {
     @Published private(set) var isWorking = false
     /// `id` of the certificate currently being revoked, if any.
     @Published private(set) var revokingID: String?
+    /// `id` of the certificate currently being exported, if any.
+    @Published private(set) var exportingID: String?
+    /// The last export, until the share sheet showing it closes.
+    @Published var exportedP12: ExportedP12?
     @Published var lastError: String?
     /// True once a list has been fetched (tells "not loaded" apart from "empty").
     @Published private(set) var hasLoaded = false
@@ -93,7 +107,7 @@ final class CertManager: ObservableObject {
     /// saved.
     @MainActor
     func autoLoad() {
-        guard !didAutoLoad, !hasLoaded, !isWorking, revokingID == nil else { return }
+        guard !didAutoLoad, !hasLoaded, !isWorking, revokingID == nil, exportingID == nil else { return }
         guard !engine.normalizedAppleID.isEmpty, !engine.applePassword.isEmpty else { return }
         didAutoLoad = true
         loadCerts()
@@ -102,7 +116,7 @@ final class CertManager: ObservableObject {
     /// Sign in if needed and reload the list; `then` runs only if it arrived.
     @MainActor
     func loadCerts(then: (() -> Void)? = nil) {
-        guard !isWorking, revokingID == nil else { return }
+        guard !isWorking, revokingID == nil, exportingID == nil else { return }
         let id = engine.normalizedAppleID, pw = engine.applePassword
         guard !id.isEmpty, !pw.isEmpty else {
             lastError = L("No Apple ID saved. Add one in Settings › Account.")
@@ -135,7 +149,7 @@ final class CertManager: ObservableObject {
     /// the install) runs only if Apple accepted the revocation.
     @MainActor
     func revoke(_ cert: DevCert, onSuccess: (() -> Void)? = nil) {
-        guard session != nil, revokingID == nil, !isWorking else { return }
+        guard session != nil, revokingID == nil, exportingID == nil, !isWorking else { return }
         let serial = cert.serialNumber
         guard !serial.isEmpty else {
             lastError = L("This certificate has no serial number, so it can't be revoked.")
@@ -162,11 +176,57 @@ final class CertManager: ObservableObject {
         }
     }
 
+    /// Whether `cert` may be the one SideInstaller made on this iPhone, the only
+    /// kind whose private key is here to export. Another iPhone's SideInstaller
+    /// certificate has the same machine name; `exportP12` tells them apart.
+    func canExport(_ cert: DevCert) -> Bool {
+        cert.machineName == Self.machineName && !cert.serialNumber.isEmpty
+    }
+
+    /// Exports `cert` with its private key as a `.p12` encrypted with
+    /// `password`, then offers it in `exportedP12`. Asks Apple only for the
+    /// certificate list; nothing is created or revoked.
+    @MainActor
+    func exportP12(_ cert: DevCert, password: String) {
+        guard session != nil, exportingID == nil, revokingID == nil, !isWorking else { return }
+        guard !password.isEmpty else {
+            lastError = L("Enter a password for the .p12 file.")
+            return
+        }
+        exportingID = cert.id
+        lastError = nil
+        engine.log("Certificates: exporting \(cert.displayName) as .p12 …")
+        Task { @MainActor in
+            do {
+                let (serial, data) = try await onQueue {
+                    try self.performExport(serial: cert.serialNumber, password: password)
+                }
+                let url = try Self.writeExport(data, serial: serial)
+                exportedP12 = ExportedP12(url: url)
+                engine.log("Certificates: exported \(cert.displayName) (\(data.count) bytes).")
+            } catch {
+                lastError = short(error)
+                engine.log("⛔️ Export failed: \(lastError ?? "")")
+            }
+            exportingID = nil
+        }
+    }
+
+    /// Deletes the exported file once the share sheet closes; whatever it was
+    /// shared to or saved in keeps its own copy.
+    @MainActor
+    func discardExport() {
+        if let url = exportedP12?.url {
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+        exportedP12 = nil
+    }
+
     /// Loads the list if needed, then runs `then`. Used by the Install screen's
     /// revoke chooser.
     @MainActor
     func ensureLoaded(then: @escaping () -> Void) {
-        guard !isWorking, revokingID == nil else { return }
+        guard !isWorking, revokingID == nil, exportingID == nil else { return }
         if hasLoaded, session != nil {
             then()
             return
@@ -268,7 +328,7 @@ final class CertManager: ObservableObject {
         var newSession: OpaquePointer?
         var summary: UnsafeMutablePointer<CChar>?
         var error: UnsafeMutablePointer<CChar>?
-        let rc = si_cert_signin(id, pw, ani, "SideInstaller", dir,
+        let rc = si_cert_signin(id, pw, ani, Self.machineName, dir,
                                 certTwoFactorCallback, nil,
                                 &newSession, &summary, &error)
         if rc == 0 {
@@ -315,6 +375,57 @@ final class CertManager: ObservableObject {
             error.map { si_string_free($0) }
             throw EngineError.message("Revoke failed: \(msg)")
         }
+    }
+
+    /// The archive for `serial` and the serial it actually holds.
+    private func performExport(serial: String, password: String) throws -> (String, Data) {
+        guard let session = self.session else { throw EngineError.message("Not signed in.") }
+        var json: UnsafeMutablePointer<CChar>?
+        var error: UnsafeMutablePointer<CChar>?
+        let rc = si_cert_export_p12(session, serial, password, &json, &error)
+        let msg = error.map { String(cString: $0) } ?? "rc=\(rc)"
+        error.map { si_string_free($0) }
+        guard rc == 0 else {
+            engine.log("Certificates: export refused: \(msg)")
+            switch rc {
+            case SI_CERT_EXPORT_NONE_HERE:
+                throw EngineError.message(L("There's no certificate to export on this iPhone. Only a certificate SideInstaller made on this iPhone can be exported, since Apple never has its private key. If it was revoked, install SideStore with SideInstaller again to make a new one."))
+            case SI_CERT_EXPORT_OTHER_DEVICE:
+                throw EngineError.message(L("SideInstaller made this certificate on another device, so its private key isn't on this iPhone. Export it from that device."))
+            default:
+                throw EngineError.message("Export failed: \(msg)")
+            }
+        }
+        let s = json.map { String(cString: $0) } ?? ""
+        json.map { si_string_free($0) }
+        struct Reply: Decodable {
+            let serialNumber: String
+            let p12: String
+            enum CodingKeys: String, CodingKey {
+                case serialNumber = "serial_number"
+                case p12
+            }
+        }
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: Data(s.utf8)),
+              let data = Data(base64Encoded: reply.p12) else {
+            throw EngineError.message("Couldn't read the exported certificate.")
+        }
+        return (reply.serialNumber, data)
+    }
+
+    /// Writes the archive to a folder of its own in tmp, which `discardExport`
+    /// removes. Named after the serial, so two exports can't be mixed up.
+    private static func writeExport(_ data: Data, serial: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("p12-export-\(UUID().uuidString)", isDirectory: true)
+        let url = dir.appendingPathComponent("SideInstaller-\(serial.prefix(8)).p12")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+        } catch {
+            throw EngineError.message(L("Couldn't save the .p12 file: %@", error.localizedDescription))
+        }
+        return url
     }
 
     // MARK: - Helpers

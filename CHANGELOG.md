@@ -2,6 +2,19 @@
 
 All notable changes to SideInstaller are documented here.
 
+## Unreleased
+
+### Added
+- **Export your certificate as a .p12.** On the Certificates screen, the certificate SideInstaller
+  made on this iPhone has an Export .p12 button. Choose a password, and the share sheet offers the
+  file to save in Files or send to another app, such as Nyxian, which signs with a .p12 and its
+  password. Only that certificate can be exported: Apple never has a certificate's private key,
+  which stays on the device that asked for it, so certificates made by SideStore, Xcode or another
+  iPhone have no button. Exporting asks Apple only for the certificate list and never creates or
+  revokes a certificate.
+- The new text is translated into Chinese, French, Italian, Japanese, Portuguese, Spanish and
+  Vietnamese.
+
 ## 1.5.2
 
 ### Fixed

@@ -264,6 +264,18 @@ let portugueseStrings: [String: String] = [
     "Unnamed certificate": "Certificado sem nome",
     "This certificate has no serial number, so it can't be revoked.":
         "Este certificado não tem número de série, então não pode ser revogado.",
+    "Export .p12": "Exportar .p12",
+    "Exporting": "Exportando",
+    "Export as .p12": "Exportar como .p12",
+    "Export": "Exportar",
+    "Choose a password for the file. You'll enter it again when you import the certificate into Nyxian or another signing app. Anyone with the file and its password can sign apps with your certificate.":
+        "Escolha uma senha para o arquivo. Você vai digitá-la de novo ao importar o certificado no Nyxian ou em outro app de assinatura. Qualquer pessoa com o arquivo e a senha pode assinar apps com o seu certificado.",
+    "Enter a password for the .p12 file.": "Digite uma senha para o arquivo .p12.",
+    "There's no certificate to export on this iPhone. Only a certificate SideInstaller made on this iPhone can be exported, since Apple never has its private key. If it was revoked, install SideStore with SideInstaller again to make a new one.":
+        "Não há nenhum certificado para exportar neste iPhone. Só dá para exportar um certificado que o SideInstaller criou neste iPhone, porque a Apple nunca tem a chave privada dele. Se ele foi revogado, instale o SideStore com o SideInstaller de novo para criar um novo.",
+    "SideInstaller made this certificate on another device, so its private key isn't on this iPhone. Export it from that device.":
+        "O SideInstaller criou este certificado em outro dispositivo, então a chave privada dele não está neste iPhone. Exporte-o a partir daquele dispositivo.",
+    "Couldn't save the .p12 file: %@": "Não foi possível salvar o arquivo .p12: %@",
 
     // MARK: - Location tab
 

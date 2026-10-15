@@ -222,6 +222,28 @@ int32_t si_cert_revoke(CertSession *session,
                        const char *serial_number,
                        char **out_error);
 
+// si_cert_export_p12's return codes besides 0, 1 and 2.
+#define SI_CERT_EXPORT_NONE_HERE 3     // no certificate goes with a key made here
+#define SI_CERT_EXPORT_OTHER_DEVICE 4  // `serial_number` isn't this device's
+
+// Export the certificate SideInstaller made on this device (under the
+// `machine_name` given to si_cert_signin), with its private key, as a PKCS#12
+// archive encrypted with `password` (non-empty), for apps that sign with one.
+// Apple never holds the key, so no other certificate can be exported.
+// `serial_number` is the certificate the user picked, or NULL/"" for whichever
+// is this device's. BLOCKS; asks Apple only for the certificate list and never
+// makes or revokes a certificate. On success *out_json is a heap JSON object:
+// {serial_number, p12: <base64>}. Returns SI_CERT_EXPORT_NONE_HERE when this
+// device has no key for the Apple ID or no certificate matches it (never made
+// here, or revoked), SI_CERT_EXPORT_OTHER_DEVICE when `serial_number` is
+// another certificate, other non-zero codes on other errors; *out_error is set
+// on any failure. Free strings with si_string_free.
+int32_t si_cert_export_p12(CertSession *session,
+                           const char *serial_number,
+                           const char *password,
+                           char **out_json,
+                           char **out_error);
+
 // Free a certificate session.
 void si_cert_session_free(CertSession *session);
 

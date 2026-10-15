@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 /// Lists and revokes the Apple ID's development certificates (e.g. to fix error
-/// 7460). Pushed from Tools (relies on its `NavigationStack`).
+/// 7460), and exports SideInstaller's own as a `.p12`. Pushed from Tools (relies
+/// on its `NavigationStack`).
 struct CertsView: View {
     /// Observed so labels redraw when the language changes.
     @EnvironmentObject private var loc: Localizer
@@ -10,6 +12,9 @@ struct CertsView: View {
     @State private var showSettings = false
     /// The certificate the user tapped "Revoke" on, pending confirmation.
     @State private var pendingRevoke: DevCert?
+    /// The certificate the user tapped "Export .p12" on, pending a password.
+    @State private var pendingExport: DevCert?
+    @State private var exportPassword = ""
 
     var body: some View {
         ScrollView {
@@ -42,6 +47,27 @@ struct CertsView: View {
                        cert.displayName))
             }
         }
+        .alert(L("Export as .p12"),
+               isPresented: Binding(get: { pendingExport != nil },
+                                    set: { if !$0 { pendingExport = nil } })) {
+            SecureField(L("Password"), text: $exportPassword)
+            Button(L("Export")) {
+                if let cert = pendingExport { manager.exportP12(cert, password: exportPassword) }
+                pendingExport = nil
+                exportPassword = ""
+            }
+            Button(L("Cancel"), role: .cancel) {
+                pendingExport = nil
+                exportPassword = ""
+            }
+        } message: {
+            Text(L("Choose a password for the file. You'll enter it again when you import the certificate into Nyxian or another signing app. Anyone with the file and its password can sign apps with your certificate."))
+        }
+        .sheet(item: $manager.exportedP12, onDismiss: { manager.discardExport() }) { file in
+            ShareSheet(items: [file.url]) { manager.discardExport() }
+                .presentationDetents([.medium, .large])
+                .ignoresSafeArea()
+        }
     }
 
     // MARK: Header
@@ -73,7 +99,7 @@ struct CertsView: View {
             }
         }
         .buttonStyle(PrimaryButtonStyle())
-        .disabled(manager.isWorking || manager.revokingID != nil)
+        .disabled(manager.isWorking || manager.revokingID != nil || manager.exportingID != nil)
     }
 
     // MARK: Certificate list
@@ -119,6 +145,8 @@ struct CertsView: View {
 
     private func certRow(_ cert: DevCert) -> some View {
         let revoking = manager.revokingID == cert.id
+        let exporting = manager.exportingID == cert.id
+        let busy = manager.isWorking || manager.revokingID != nil || manager.exportingID != nil
         return PanelCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
@@ -163,26 +191,68 @@ struct CertsView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                Button(role: .destructive) {
-                    pendingRevoke = cert
-                } label: {
-                    HStack(spacing: 6) {
-                        if revoking {
-                            ProgressView().controlSize(.small)
-                            Text(L("Revoking"))
-                        } else {
-                            Image(systemName: "trash")
-                            Text(L("Revoke"))
+                HStack(spacing: 10) {
+                    // Only SideInstaller's own certificate has its key here.
+                    if manager.canExport(cert) {
+                        Button {
+                            exportPassword = ""
+                            pendingExport = cert
+                        } label: {
+                            HStack(spacing: 6) {
+                                if exporting {
+                                    ProgressView().controlSize(.small)
+                                    Text(L("Exporting"))
+                                } else {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text(L("Export .p12"))
+                                }
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(.bordered)
+                        .tint(Theme.accent)
+                        .controlSize(.regular)
+                        .disabled(busy)
                     }
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity)
+
+                    Button(role: .destructive) {
+                        pendingRevoke = cert
+                    } label: {
+                        HStack(spacing: 6) {
+                            if revoking {
+                                ProgressView().controlSize(.small)
+                                Text(L("Revoking"))
+                            } else {
+                                Image(systemName: "trash")
+                                Text(L("Revoke"))
+                            }
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .controlSize(.regular)
+                    .disabled(busy)
                 }
-                .buttonStyle(.bordered)
-                .tint(.red)
-                .controlSize(.regular)
-                .disabled(revoking || manager.isWorking || manager.revokingID != nil)
             }
         }
     }
+}
+
+/// `UIActivityViewController` in a sheet, to save the exported `.p12` to Files
+/// or send it to another app. `onFinish` closes the sheet once the activity is
+/// done, which the controller can't do for the SwiftUI sheet hosting it.
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    let onFinish: () -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in onFinish() }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

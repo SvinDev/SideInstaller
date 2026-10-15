@@ -260,6 +260,18 @@ let chineseStrings: [String: String] = [
     "Unnamed certificate": "未命名的证书",
     "This certificate has no serial number, so it can't be revoked.":
         "此证书没有序列号，因此无法吊销。",
+    "Export .p12": "导出 .p12",
+    "Exporting": "正在导出",
+    "Export as .p12": "导出为 .p12",
+    "Export": "导出",
+    "Choose a password for the file. You'll enter it again when you import the certificate into Nyxian or another signing app. Anyone with the file and its password can sign apps with your certificate.":
+        "请为该文件设置密码。在 Nyxian 或其他签名应用中导入证书时需要再次输入。任何拥有该文件及其密码的人都可以用你的证书签名应用。",
+    "Enter a password for the .p12 file.": "请为 .p12 文件输入密码。",
+    "There's no certificate to export on this iPhone. Only a certificate SideInstaller made on this iPhone can be exported, since Apple never has its private key. If it was revoked, install SideStore with SideInstaller again to make a new one.":
+        "此 iPhone 上没有可导出的证书。只有 SideInstaller 在此 iPhone 上创建的证书才能导出，因为 Apple 从不持有其私钥。如果它已被吊销，请用 SideInstaller 重新安装 SideStore 以创建新证书。",
+    "SideInstaller made this certificate on another device, so its private key isn't on this iPhone. Export it from that device.":
+        "此证书是 SideInstaller 在另一台设备上创建的，因此其私钥不在此 iPhone 上。请在那台设备上导出。",
+    "Couldn't save the .p12 file: %@": "无法保存 .p12 文件：%@",
 
     // MARK: - Location tab
 
